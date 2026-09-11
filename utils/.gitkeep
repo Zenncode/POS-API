@@ -1,0 +1,9 @@
+Purpose: Placeholder for shared utility functions.
+Sample code (TypeScript):
+// utils/redact-secret.ts
+export function redactSecret(value: string): string {
+  return value.length <= 4 ? '****' : `${value.slice(0, 2)}****${value.slice(-2)}`;
+}
+
+Flow:
+Utility function -> imported across modules -> consistent reusable behavior.

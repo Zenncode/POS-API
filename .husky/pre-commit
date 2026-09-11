@@ -1,0 +1,3 @@
+# Run static and security checks before each commit.
+npm run lint
+npm audit --audit-level=high

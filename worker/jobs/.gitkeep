@@ -1,0 +1,9 @@
+Purpose: Placeholder for individual background jobs imported by the worker process.
+Sample code (TypeScript):
+// worker/jobs/sample.job.ts
+export async function runSampleJob() {
+  return { ok: true as const, job: 'sample' as const, ranAt: new Date().toISOString() };
+}
+
+Flow:
+Worker process -> import job -> execute job -> log/result or retry.

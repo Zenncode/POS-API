@@ -1,0 +1,9 @@
+Purpose: Placeholder for technical documentation and runbooks.
+Sample code (markdown):
+# docs/auth-flow.md
+- Login endpoint
+- Refresh endpoint
+- Logout endpoint
+
+Flow:
+Feature change -> update docs -> share rollout/support notes.

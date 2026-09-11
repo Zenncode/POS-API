@@ -1,0 +1,9 @@
+Purpose: Placeholder for local editor/workspace settings.
+Sample code (json):
+{
+  "editor.formatOnSave": true,
+  "files.eol": "\n"
+}
+
+Flow:
+Open workspace -> VS Code reads settings -> consistent formatting behavior.

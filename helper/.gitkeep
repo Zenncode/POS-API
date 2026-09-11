@@ -1,0 +1,10 @@
+Purpose: Placeholder for helper modules with focused support logic.
+Sample code (TypeScript):
+// helper/parse-boolean.ts
+export function parseBoolean(value: string | undefined, fallback = false): boolean {
+  if (value == null) return fallback;
+  return value.toLowerCase() === 'true';
+}
+
+Flow:
+Common helper -> reused by config/services to reduce duplication.

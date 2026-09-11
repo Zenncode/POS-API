@@ -1,0 +1,8 @@
+Purpose: Placeholder for static assets used by docs/tests/tooling.
+Sample code (text):
+assets/
+  sample-response.json
+  diagram-auth-flow.png
+
+Flow:
+Tooling/docs load static assets -> render examples/visuals.

@@ -1,0 +1,12 @@
+Purpose: Placeholder for reusable HTTP middleware modules.
+Sample code (TypeScript):
+// middleware/request-id.middleware.ts
+import type { Request, Response, NextFunction } from 'express';
+
+export function requestIdMiddleware(req: Request, _res: Response, next: NextFunction) {
+  req.headers['x-request-id'] ||= `req-${Date.now()}`;
+  next();
+}
+
+Flow:
+Incoming request -> middleware chain -> route handler.

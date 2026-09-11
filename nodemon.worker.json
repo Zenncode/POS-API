@@ -1,0 +1,6 @@
+{
+  "watch": ["worker", "config", ".env"],
+  "ext": "ts,js,mjs,json",
+  "ignore": ["dist", "node_modules", "assets/uploads"],
+  "exec": "ts-node --files -r tsconfig-paths/register worker/index.ts"
+}

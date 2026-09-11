@@ -1,0 +1,10 @@
+Purpose: Placeholder for Prisma schema and migrations (optional stack path).
+Sample code (prisma):
+// prisma/schema.prisma
+model Admin {
+  id    String @id @default(cuid())
+  email String @unique
+}
+
+Flow:
+Edit schema -> run migration -> use generated client in services.

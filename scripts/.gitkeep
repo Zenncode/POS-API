@@ -1,0 +1,7 @@
+Purpose: Placeholder for project automation scripts.
+Sample code (Node.js):
+// scripts/seed-admin.js
+console.log('Seed admin user here');
+
+Flow:
+Run script command -> perform one-off/automation task -> exit with status.

@@ -1,0 +1,9 @@
+Purpose: Placeholder for the background worker process (jobs, queues, scheduled work).
+Sample code (TypeScript):
+// worker/index.ts
+// npm run dev:worker
+console.log('Worker process started');
+
+Flow:
+Start worker process -> load jobs -> run/schedule work -> graceful shutdown.
+Keep this process separate from the HTTP API (`npm run dev`).

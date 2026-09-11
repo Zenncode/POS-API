@@ -1,0 +1,12 @@
+Purpose: Placeholder for Zod schemas and request validation helpers.
+Sample code (TypeScript):
+// zod/login.schema.ts
+import { z } from 'zod';
+
+export const loginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8),
+});
+
+Flow:
+Request payload -> schema validation -> controller/service execution.

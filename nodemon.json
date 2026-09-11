@@ -1,0 +1,6 @@
+{
+  "watch": ["app", "config", ".env"],
+  "ext": "ts,js,mjs,json",
+  "ignore": ["dist", "node_modules", "assets/uploads"],
+  "exec": "npm run dev:server"
+}

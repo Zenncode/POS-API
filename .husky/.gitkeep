@@ -1,0 +1,7 @@
+Purpose: Placeholder for Git hook scripts.
+Sample code (shell):
+# .husky/pre-commit
+npm run lint
+
+Flow:
+Git commit -> pre-commit hook -> lint validation -> commit allowed/blocked.

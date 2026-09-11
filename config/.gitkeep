@@ -1,0 +1,10 @@
+Purpose: Placeholder for project-level configuration files.
+Sample code (TypeScript):
+// config/app.config.ts
+export const appConfig = {
+  env: process.env.NODE_ENV ?? 'development',
+  appName: process.env.APP_NAME ?? 'zenntechinc-backend',
+};
+
+Flow:
+Load env -> build config object -> import config in app modules.

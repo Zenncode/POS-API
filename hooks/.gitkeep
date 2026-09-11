@@ -1,0 +1,8 @@
+Purpose: Placeholder for request lifecycle hooks (pre/post controller helpers).
+Sample code (TypeScript):
+// hooks/auth.hook.ts
+// route -> guard -> hook -> controller -> service
+
+Flow:
+Incoming request -> optional hook -> controller/service execution.
+See `hooks/auth.hook.ts` for commented wiring examples.

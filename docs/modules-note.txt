@@ -1,0 +1,23 @@
+Express App:
+- Loads `.env` values at startup.
+- Tries MongoDB connection using `MONGODB_URI`.
+- Continues startup in sample mode when MongoDB is unavailable and `MONGODB_REQUIRED=false`.
+- Registers JSON body parser and CORS middleware.
+- Mounts auth router at `/api/auth/admin`.
+- Applies `adminAuthGuard` middleware to protected `/api/*` routes.
+
+Worker Process:
+- Separate from the HTTP API. Start with `npm run dev:worker` or `npm run worker`.
+- Entry: `worker/index.ts`.
+- Jobs live in `worker/jobs/` (sample job runs once on worker startup).
+- Do not start the worker from `app/server.ts`.
+
+Auth Router:
+- Public route: `POST /api/auth/admin/login`
+- Public route: `POST /api/auth/admin/refresh`
+- Protected route: `POST /api/auth/admin/logout`
+- Controller validates request body and returns rotated JWT tokens.
+- Service checks admin credentials from MongoDB (`admins` collection) when connected.
+- If MongoDB is unavailable, service uses in-memory sample admin credentials (`SAMPLE_ADMIN_*`).
+- Refresh tokens are hashed and rotated in the active storage mode (MongoDB or in-memory).
+

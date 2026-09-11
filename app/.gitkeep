@@ -1,0 +1,9 @@
+Purpose: Placeholder for main backend application modules.
+Sample code (TypeScript):
+// app/controllers/health.controller.ts
+export function getHealth() {
+  return { status: 'ok' };
+}
+
+Flow:
+Route -> Controller -> Service -> Response.

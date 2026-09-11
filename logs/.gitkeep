@@ -1,0 +1,7 @@
+Purpose: Placeholder for local runtime logs.
+Sample code (text):
+[2026-04-23T10:00:00.000Z] INFO  server_started port=3000
+[2026-04-23T10:01:00.000Z] ERROR mongo_connect_failed reason=timeout
+
+Flow:
+App writes logs -> dev reads logs -> troubleshoot runtime issues.

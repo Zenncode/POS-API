@@ -1,0 +1,10 @@
+Purpose: Placeholder for generated artifacts that may be committed when required.
+Sample code (TypeScript):
+// generated/api.types.ts
+export type ApiHealthResponse = {
+  status: 'ok' | 'error';
+  generatedAt: string;
+};
+
+Flow:
+Source schema/codegen -> generate file -> import generated types in app.
