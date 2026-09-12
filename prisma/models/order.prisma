@@ -1,0 +1,28 @@
+model Order {
+  id            String      @id @default(uuid())
+  orderNumber   String      @unique
+  status        OrderStatus @default(PENDING)
+  cashierId     String
+  storeId       String?
+  customerId    String?
+  subtotalCents Int
+  taxCents      Int
+  discountCents Int         @default(0)
+  totalCents    Int
+  paidCents     Int         @default(0)
+  changeCents   Int         @default(0)
+  note          String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  cashier   User      @relation(fields: [cashierId], references: [id])
+  store     Store?    @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  customer  Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  items     OrderItem[]
+  payments  Payment[]
+
+  @@index([status, createdAt])
+  @@index([cashierId, createdAt])
+  @@index([storeId, createdAt])
+  @@map("orders")
+}

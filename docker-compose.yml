@@ -1,30 +1,23 @@
-version: '3.8'
-
 services:
-  api:
-    build: .
-    container_name: zenntechinc-api
-    ports:
-      - '3000:3000'
-    env_file:
-      - .env
-    environment:
-      MONGODB_URI: mongodb://mongo:27017/zenntechinc
-      REDIS_URL: redis://redis:6379
-    depends_on:
-      - mongo
-      - redis
-    volumes:
-      - ./assets/uploads:/app/assets/uploads
-
-  mongo:
-    image: mongo:7
-    container_name: zenntechinc-mongo
+  postgres:
+    image: postgres:16-alpine
+    container_name: zenntechinc-postgres
     restart: unless-stopped
     ports:
-      - '27017:27017'
+      - '5433:5432'
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: pos
     volumes:
-      - mongo_data:/data/db
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d pos']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - pos-network
 
   redis:
     image: redis:7-alpine
@@ -35,7 +28,133 @@ services:
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - pos-network
+
+  minio:
+    image: minio/minio:latest
+    container_name: zenntechinc-minio
+    restart: unless-stopped
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:9000/minio/health/live']
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - pos-network
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: zenntechinc-api
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/pos?schema=public
+      - REDIS_URL=redis://redis:6379
+      - REDIS_ENABLED=true
+      - QUEUE_ENABLED=true
+      - JWT_SECRET=change-this-secret
+      - JWT_REFRESH_SECRET=change-this-refresh-secret
+      - BCRYPT_SALT_ROUNDS=12
+      - ADMIN_SEED_EMAIL=admin@example.com
+      - ADMIN_SEED_PASSWORD=change-me-please
+      - CORS_ORIGIN=http://localhost:3000
+      - SOCKET_AUTH_REQUIRED=true
+      - LOW_STOCK_THRESHOLD=5
+      - MINIO_ENDPOINT=minio
+      - MINIO_PORT=9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - MINIO_BUCKET=pos-assets
+      - MINIO_USE_SSL=false
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - pos-network
+    volumes:
+      - ./app:/app/app
+      - ./config:/app/config
+      - ./zod:/app/zod
+      - ./hooks:/app/hooks
+      - ./middleware:/app/middleware
+      - ./utils:/app/utils
+      - ./helper:/app/helper
+      - ./socket:/app/socket
+      - ./worker:/app/worker
+      - ./prisma:/app/prisma
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: zenntechinc-worker
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/pos?schema=public
+      - REDIS_URL=redis://redis:6379
+      - REDIS_ENABLED=true
+      - QUEUE_ENABLED=true
+      - JWT_SECRET=change-this-secret
+      - JWT_REFRESH_SECRET=change-this-refresh-secret
+      - BCRYPT_SALT_ROUNDS=12
+      - LOW_STOCK_THRESHOLD=5
+      - MINIO_ENDPOINT=minio
+      - MINIO_PORT=9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - MINIO_BUCKET=pos-assets
+      - MINIO_USE_SSL=false
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - pos-network
+    volumes:
+      - ./app:/app/app
+      - ./config:/app/config
+      - ./zod:/app/zod
+      - ./hooks:/app/hooks
+      - ./middleware:/app/middleware
+      - ./utils:/app/utils
+      - ./helper:/app/helper
+      - ./socket:/app/socket
+      - ./worker:/app/worker
+      - ./prisma:/app/prisma
 
 volumes:
-  mongo_data:
+  postgres_data:
   redis_data:
+  minio_data:
+
+networks:
+  pos-network:
+    driver: bridge

@@ -1,10 +1,38 @@
-import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import request from 'supertest';
+
+process.env.JWT_SECRET = 'test-access-secret-health';
+process.env.JWT_REFRESH_SECRET = 'test-refresh-secret-health';
+process.env.DATABASE_URL = 'postgresql://test:test@127.0.0.1:5432/test';
+process.env.REDIS_ENABLED = 'false';
+process.env.QUEUE_ENABLED = 'true';
 
 jest.mock('../app/services/cache.service', () => ({
   __esModule: true,
   getCache: jest.fn(),
   setCache: jest.fn(),
+  delCache: jest.fn(),
+  delCacheByPrefix: jest.fn(),
+  withCache: jest.fn(),
+}));
+
+jest.mock('../config/prisma.client', () => ({
+  __esModule: true,
+  getPrismaClient: () => ({
+    $queryRaw: jest.fn(async () => []),
+    $transaction: jest.fn(),
+  }),
+  connectDatabase: jest.fn(async () => true),
+  disconnectDatabase: jest.fn(async () => undefined),
+}));
+
+jest.mock('../config/redis.client', () => ({
+  __esModule: true,
+  getRedisClient: () => null,
+  connectRedis: jest.fn(async () => undefined),
+  disconnectRedis: jest.fn(async () => undefined),
+  publishPosEvent: jest.fn(async () => undefined),
+  getSubscriberClient: jest.fn(async () => null),
+  POS_EVENTS_CHANNEL: 'pos:events',
 }));
 
 import { createApp } from '../app/app.module';
@@ -18,12 +46,14 @@ describe('Health Route', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    delete process.env.REDIS_HEALTH_TTL_SECONDS;
   });
 
   it('GET /api/health returns cached payload when available', async () => {
     getCacheMock.mockResolvedValue({
       status: 'ok',
+      database: 'up',
+      cache: 'disabled',
+      queue: 'enabled',
       generatedAt: '2026-04-20T00:00:00.000Z',
     });
 
@@ -32,29 +62,33 @@ describe('Health Route', () => {
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
       status: 'ok',
+      database: 'up',
+      cache: 'disabled',
+      queue: 'enabled',
       generatedAt: '2026-04-20T00:00:00.000Z',
     });
     expect(setCacheMock).not.toHaveBeenCalled();
   });
 
-  it('GET /api/health creates and stores payload on cache miss', async () => {
+  it('GET /api/health reports database up, cache disabled, queue enabled on miss', async () => {
     getCacheMock.mockResolvedValue(null);
     setCacheMock.mockResolvedValue(undefined);
-    process.env.REDIS_HEALTH_TTL_SECONDS = '10';
 
     const response = await request(app).get('/api/health');
 
     expect(response.status).toBe(200);
-    expect(response.body.status).toBe('ok');
-    expect(Number.isNaN(Date.parse(response.body.generatedAt))).toBe(false);
+    expect(response.body).toEqual({
+      status: 'ok',
+      database: 'up',
+      cache: 'disabled',
+      queue: 'enabled',
+      generatedAt: expect.any(String),
+    });
 
     expect(setCacheMock).toHaveBeenCalledWith(
       'api:health',
-      expect.objectContaining({
-        status: 'ok',
-        generatedAt: expect.any(String),
-      }),
-      10,
+      expect.objectContaining({ status: 'ok', database: 'up' }),
+      15,
     );
   });
 });

@@ -1,0 +1,17 @@
+model OrderItem {
+  id             String @id @default(uuid())
+  orderId        String
+  productId      String
+  nameSnapshot   String
+  skuSnapshot    String
+  unitPriceCents Int
+  quantity       Int
+  lineTotalCents Int
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([orderId])
+  @@index([productId])
+  @@map("order_items")
+}

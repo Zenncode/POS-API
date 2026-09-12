@@ -1,10 +1,19 @@
 import { Server as HttpServer } from 'http';
 import { Server as SocketServer, Socket } from 'socket.io';
+import jwt from 'jsonwebtoken';
+import { getEnv } from '../config/env';
+import type { JwtPayload } from '../app/common/guards/auth.guard';
 
 type RoomBroadcastPayload = {
   room?: string;
   event?: string;
   data?: unknown;
+};
+
+export type SocketUser = {
+  id: string;
+  email: string;
+  role: JwtPayload['role'];
 };
 
 let io: SocketServer | null = null;
@@ -38,11 +47,72 @@ function isAllowedOrigin(origin: string | undefined, allowedOrigins: string[]): 
   return allowedOrigins.includes('*') || allowedOrigins.includes(origin);
 }
 
+function extractHandshakeToken(socket: Socket): string | null {
+  const authPayload = socket.handshake.auth as { token?: string } | undefined;
+  const authHeader = socket.handshake.headers.authorization;
+
+  if (authPayload?.token && typeof authPayload.token === 'string') {
+    return authPayload.token;
+  }
+
+  if (authHeader?.startsWith('Bearer ')) {
+    return authHeader.slice('Bearer '.length);
+  }
+
+  return null;
+}
+
+function attachSocketUser(socket: Socket, payload: JwtPayload): void {
+  socket.data.user = {
+    id: payload.sub,
+    email: payload.email,
+    role: payload.role,
+  } satisfies SocketUser;
+}
+
+function authenticateHandshake(socket: Socket): Promise<void> | null {
+  const env = getEnv();
+
+  if (!env.SOCKET_AUTH_REQUIRED) {
+    return null;
+  }
+
+  return new Promise<void>((resolve, reject) => {
+    const token = extractHandshakeToken(socket);
+
+    if (!token) {
+      reject(new Error('Authentication required'));
+      return;
+    }
+
+    try {
+      const decoded = jwt.verify(token, env.JWT_SECRET) as JwtPayload;
+
+      if (decoded.tokenType !== 'access') {
+        reject(new Error('Invalid token type'));
+        return;
+      }
+
+      attachSocketUser(socket, decoded);
+      resolve();
+    } catch {
+      reject(new Error('Invalid or expired token'));
+    }
+  });
+}
+
 function bindSocketEvents(socket: Socket): void {
+  const user = socket.data.user as SocketUser | undefined;
+
   socket.emit('socket:welcome', {
     id: socket.id,
     connectedAt: new Date().toISOString(),
+    user: user ? { id: user.id, role: user.role } : null,
   });
+
+  if (user) {
+    void socket.join(`user:${user.id}`);
+  }
 
   socket.on('ping', (payload: unknown, ack?: (response: unknown) => void) => {
     const response = {
@@ -57,6 +127,16 @@ function bindSocketEvents(socket: Socket): void {
     }
 
     socket.emit('pong', response);
+  });
+
+  socket.on('join:store', (storeId: string, ack?: (response: unknown) => void) => {
+    const normalized = typeof storeId === 'string' ? storeId.trim() : '';
+    const room = normalized ? `store:${normalized}` : 'store:default';
+
+    void socket.join(room);
+    if (typeof ack === 'function') {
+      ack({ ok: true, room });
+    }
   });
 
   socket.on('join:room', (room: string, ack?: (response: unknown) => void) => {
@@ -128,6 +208,18 @@ export function initializeSocketServer(httpServer: HttpServer): SocketServer {
       },
       credentials: true,
     },
+  });
+
+  io.use((socket, next) => {
+    const auth = authenticateHandshake(socket);
+    if (!auth) {
+      next();
+      return;
+    }
+
+    auth
+      .then(() => next())
+      .catch((error: Error) => next(error));
   });
 
   io.on('connection', (socket) => {

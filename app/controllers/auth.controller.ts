@@ -1,48 +1,69 @@
 import { Request, Response } from 'express';
-import { loginAdmin, refreshAdminSession, logoutAdmin } from '../services/auth.service';
+import { loginSchema, overrideSchema } from '../../zod/auth.schema';
+import { createOverrideToken, getStaffProfile, loginStaff, logoutStaff, refreshStaffSession } from '../services/auth.service';
+import { verifyOverridePin } from '../services/user.service';
+import { forbidden, unauthorized } from '../common/errors';
+import type { UserRole } from '../common/guards/auth.guard';
 
-export async function loginAdminController(req: Request, res: Response): Promise<Response> {
-  const { email, password } = req.body;
-
-  if (!email || !password) {
-    return res.status(400).json({ message: 'Email and password are required' });
-  }
-
-  try {
-    const tokens = await loginAdmin({ email, password });
-    return res.status(200).json(tokens);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Login failed';
-    return res.status(401).json({ message });
-  }
+function parseBody<T>(schema: { parse: (value: unknown) => T }, body: unknown): T {
+  return schema.parse(body);
 }
 
-export async function refreshAdminController(req: Request, res: Response): Promise<Response> {
-  const { refreshToken } = req.body;
-
-  if (!refreshToken) {
-    return res.status(400).json({ message: 'Refresh token is required' });
-  }
-
-  try {
-    const tokens = await refreshAdminSession(refreshToken);
-    return res.status(200).json(tokens);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Token refresh failed';
-    return res.status(401).json({ message });
-  }
+export async function handleLogin(req: Request, res: Response): Promise<void> {
+  const dto = parseBody(loginSchema, req.body);
+  const ip = req.ip;
+  const accessToken = await loginStaff(dto, res, { ip });
+  res.status(200).json({ accessToken });
 }
 
-export async function logoutAdminController(req: Request, res: Response): Promise<Response> {
-  if (!req.admin?.id) {
-    return res.status(401).json({ message: 'Unauthorized' });
+export async function handleLegacyAdminLogin(req: Request, res: Response): Promise<void> {
+  const dto = parseBody(loginSchema, req.body);
+  const ip = req.ip;
+  const accessToken = await loginStaff(dto, res, { requireRole: 'ADMIN' as UserRole, ip });
+  res.status(200).json({ accessToken });
+}
+
+export async function handleRefresh(req: Request, res: Response): Promise<void> {
+  const accessToken = await refreshStaffSession(req, res);
+  res.status(200).json({ accessToken });
+}
+
+export async function handleLogout(req: Request, res: Response): Promise<void> {
+  if (!req.user) {
+    throw unauthorized();
   }
 
-  try {
-    await logoutAdmin(req.admin.id);
-    return res.status(200).json({ message: 'Logged out successfully' });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Logout failed';
-    return res.status(500).json({ message });
+  await logoutStaff(req.user.id, res, req.ip);
+  res.status(200).json({ message: 'Logged out' });
+}
+
+export async function handleMe(req: Request, res: Response): Promise<void> {
+  if (!req.user) {
+    throw unauthorized();
   }
+
+  const profile = await getStaffProfile(req.user.id);
+  if (!profile) {
+    throw unauthorized('User not found');
+  }
+
+  res.status(200).json(profile);
+}
+
+export async function handleOverride(req: Request, res: Response): Promise<void> {
+  if (!req.user) {
+    throw unauthorized();
+  }
+
+  const dto = parseBody(overrideSchema, req.body);
+  const manager = await verifyOverridePin(dto.pin);
+
+  if (!manager) {
+    throw forbidden('Invalid manager PIN', 'INVALID_OVERRIDE_PIN');
+  }
+
+  res.status(200).json({
+    overrideToken: createOverrideToken(manager),
+    manager: { id: manager.id, name: manager.name, role: manager.role },
+  });
 }

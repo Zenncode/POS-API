@@ -16,8 +16,8 @@
     "strict": true,
     "isolatedModules": true,
     "moduleResolution": "Node16",
-    "types": ["node"]
+    "types": ["node", "express", "jest"]
   },
-  "include": ["app/**/*", "config/**/*", "hooks/**/*", "socket/**/*", "worker/**/*"],
+  "include": ["app/**/*", "config/**/*", "hooks/**/*", "socket/**/*", "worker/**/*", "zod/**/*", "app/types/**/*"],
   "exclude": ["node_modules", "dist"]
 }

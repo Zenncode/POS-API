@@ -1,0 +1,14 @@
+model StockMovement {
+  id        String              @id @default(uuid())
+  productId String
+  delta     Int
+  reason    StockMovementReason
+  orderId   String?
+  note      String?
+  createdAt DateTime            @default(now())
+
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([productId, createdAt])
+  @@map("stock_movements")
+}

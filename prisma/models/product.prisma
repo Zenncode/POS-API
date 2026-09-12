@@ -1,0 +1,23 @@
+model Product {
+  id                String   @id @default(uuid())
+  sku               String   @unique
+  barcode           String?  @unique
+  name              String
+  categoryId        String?
+  priceCents        Int
+  costCents         Int?
+  taxRateBps        Int      @default(0)
+  stock             Int      @default(0)
+  lowStockThreshold Int      @default(5)
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  category       Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  stockMovements StockMovement[]
+  orderItems     OrderItem[]
+
+  @@index([categoryId])
+  @@index([isActive, name])
+  @@map("products")
+}

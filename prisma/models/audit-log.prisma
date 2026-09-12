@@ -1,0 +1,17 @@
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  action    String
+  entity    String?
+  entityId  String?
+  metadata  Json?
+  ip        String?
+  userAgent String?
+  result    String   // SUCCESS | FAILURE
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
+  @@index([entity, entityId])
+  @@map("audit_logs")
+}

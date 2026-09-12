@@ -1,13 +1,12 @@
-/**
- * Background worker process.
- * Run separately from the HTTP API:
- *   npm run dev:worker
- *   npm run worker
- *
- * Add jobs under worker/jobs and call them from startWorker().
- */
-
-import { runSampleJob } from './jobs/sample.job';
+import { Worker } from 'bullmq';
+import { loadEnvFile } from '../config/loadEnv';
+import { getEnv } from '../config/env';
+import { POS_QUEUE_NAME, bullConnection, closeQueue } from '../config/queues';
+import { connectDatabase, disconnectDatabase } from '../config/prisma.client';
+import { connectRedis, disconnectRedis } from '../config/redis.client';
+import { runDailyReportJob } from './jobs/report.job';
+import { runLowStockAlertJob } from './jobs/low-stock.job';
+import type { StockLowAlertJobData } from '../config/queues';
 
 function log(message: string): void {
   process.stdout.write(`[worker] ${message}\n`);
@@ -17,11 +16,60 @@ function logError(message: string): void {
   process.stderr.write(`[worker] ${message}\n`);
 }
 
-async function startWorker(): Promise<void> {
-  log('Worker process started. Add jobs in worker/jobs.');
+let worker: Worker | null = null;
 
-  const startupCheck = await runSampleJob();
-  log(`Startup sample job completed at ${startupCheck.ranAt}`);
+function startBullWorker(): Worker {
+  const bullWorker = new Worker(
+    POS_QUEUE_NAME,
+    async (job) => {
+      log(`Processing job ${job.id} (${job.name})`);
+
+      switch (job.name) {
+        case 'report:daily':
+          await runDailyReportJob(job.data as { date?: string });
+          break;
+        case 'stock:low-alert':
+          await runLowStockAlertJob((job.data ?? {}) as StockLowAlertJobData);
+          break;
+        default:
+          log(`Unknown job name: ${job.name} — skipping`);
+          break;
+      }
+    },
+    {
+      connection: bullConnection(),
+      concurrency: 4,
+    },
+  );
+
+  bullWorker.on('completed', (job) => {
+    log(`Job ${job.id} (${job.name}) completed`);
+  });
+
+  bullWorker.on('failed', (job, error) => {
+    logError(`Job ${job?.id ?? 'unknown'} (${job?.name ?? 'unknown'}) failed: ${error.message}`);
+  });
+
+  return bullWorker;
+}
+
+async function startWorker(): Promise<void> {
+  loadEnvFile();
+  const env = getEnv();
+
+  await connectDatabase();
+  await connectRedis();
+
+  if (!env.QUEUE_ENABLED) {
+    log('QUEUE_ENABLED=false — worker idling; set QUEUE_ENABLED=true to process jobs.');
+    await new Promise<void>(() => {
+      // Keep process alive; jobs are disabled.
+    });
+    return;
+  }
+
+  worker = startBullWorker();
+  log(`Worker listening on queue "${POS_QUEUE_NAME}" (redis: ${env.REDIS_URL})`);
 
   await new Promise<void>((resolve) => {
     const shutdown = (signal: string) => {
@@ -33,6 +81,11 @@ async function startWorker(): Promise<void> {
     process.once('SIGTERM', () => shutdown('SIGTERM'));
   });
 
+  if (worker) {
+    await worker.close();
+  }
+
+  await Promise.allSettled([closeQueue(), disconnectDatabase(), disconnectRedis()]);
   log('Worker process stopped.');
 }
 

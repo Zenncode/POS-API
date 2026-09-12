@@ -1,23 +1,42 @@
 Express App:
-- Loads `.env` values at startup.
-- Tries MongoDB connection using `MONGODB_URI`.
-- Continues startup in sample mode when MongoDB is unavailable and `MONGODB_REQUIRED=false`.
-- Registers JSON body parser and CORS middleware.
-- Mounts auth router at `/api/auth/admin`.
-- Applies `adminAuthGuard` middleware to protected `/api/*` routes.
+- Loads `.env` values at startup, validated by `config/env.ts` (Zod).
+- Connects PostgreSQL via Prisma (`config/prisma.client.ts`); startup fails if unreachable.
+- Tries Redis (`config/redis.client.ts`); continues without cache/publishing when unavailable.
+- Seeds first ADMIN staff from `ADMIN_SEED_EMAIL`/`ADMIN_SEED_PASSWORD` when set.
+- Mounts routers: auth, products, categories, customers, orders, reports.
+- Public: `/`, `/api/health`, `/api/auth/login`, `/api/auth/refresh`, legacy `/api/auth/admin/*`.
+- All other routes require Bearer access tokens (`authGuard`); write routes also require roles (`requireRoles`).
+- Central error handler maps ZodError to 400 and AppError to its status/code.
 
 Worker Process:
 - Separate from the HTTP API. Start with `npm run dev:worker` or `npm run worker`.
-- Entry: `worker/index.ts`.
-- Jobs live in `worker/jobs/` (sample job runs once on worker startup).
+- Entry: `worker/index.ts` — BullMQ worker consuming queue `pos-jobs`.
+- Jobs live in `worker/jobs/` (`report:daily`, `stock:low-alert`).
+- Job results publish to Redis pub/sub `pos:events`; the API re-emits them via Socket.IO.
 - Do not start the worker from `app/server.ts`.
 
-Auth Router:
-- Public route: `POST /api/auth/admin/login`
-- Public route: `POST /api/auth/admin/refresh`
-- Protected route: `POST /api/auth/admin/logout`
-- Controller validates request body and returns rotated JWT tokens.
-- Service checks admin credentials from MongoDB (`admins` collection) when connected.
-- If MongoDB is unavailable, service uses in-memory sample admin credentials (`SAMPLE_ADMIN_*`).
-- Refresh tokens are hashed and rotated in the active storage mode (MongoDB or in-memory).
+Auth:
+- `POST /api/auth/login` (public): any active staff role; returns access + refresh tokens.
+- `POST /api/auth/admin/login` (public, legacy): ADMIN role only.
+- Refresh tokens are bcrypt-hashed on the `User` row and rotated on refresh;
+  reuse of a rotated token revokes the session (`refreshTokenHash = null`).
+- `authGuard` verifies `tokenType=access`; socket handshake uses the same token.
+- Manager override (step-up auth): ADMIN sets manager PINs (`POST /api/users/:id/pin`);
+  `POST /api/auth/override` exchanges a PIN for a ~5-min override token (tokenType
+  `override`, JWT_SECRET-signed). `requireOverride`/`ensureOverride` let cashiers perform
+  sensitive actions (void, discounts above `DISCOUNT_OVERRIDE_CENTS`) with the
+  `X-Override-Token` header; the approving manager id is recorded as `authorizedBy`.
 
+Users (ADMIN only):
+- `GET/POST /api/users`, `PATCH /api/users/:id`, `POST /api/users/:id/reset-password`,
+  `POST /api/users/:id/pin` (MANAGER/ADMIN targets only).
+- Self-demotion/self-deactivation is blocked; removing the last active ADMIN returns 409
+  LAST_ADMIN; deactivating or resetting a password clears `refreshTokenHash`.
+
+Checkout (`order.service.createOrder`):
+- Optional `Idempotency-Key`: Redis `SET NX EX` claim; replays return the stored response;
+  concurrent duplicates get 409; no Redis = pass-through.
+- One Prisma transaction creates the order + snapshot items, guarded-decrements stock
+  (miss -> 422 INSUFFICIENT_STOCK), writes payments and SALE stock movements.
+- Post-commit: product list cache invalidation, `order:created` socket emit + pos event,
+  low-stock alert enqueue when items hit their threshold.

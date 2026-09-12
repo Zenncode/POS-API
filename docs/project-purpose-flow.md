@@ -2,79 +2,77 @@
 
 ## Purpose of this project
 
-This project is a production-ready backend foundation for admin-based systems.
+This is the backend for a Point-of-Sale (POS) system:
 
-It provides:
-- Express + TypeScript API
-- Admin JWT auth (login, refresh, logout)
-- MongoDB (optional by default; required only when `MONGODB_REQUIRED=true`)
-- Redis cache (optional)
-- Socket.IO realtime support
-- Jest/Supertest tests
+- Express + TypeScript REST API
+- PostgreSQL (Prisma) — staff accounts, catalog, customers, orders, payments, stock ledger
+- Redis — response caching, idempotency claims, pub/sub event fan-out
+- BullMQ — background jobs (daily reports, low-stock alerts) in a separate worker process
+- Socket.IO — realtime order/stock events to POS clients
+- Role-based JWT auth: ADMIN / MANAGER / CASHIER
 
 ## Architecture in simple terms
 
 1. Entry and runtime layer
-   - `app/server.ts` starts the HTTP API and integrations.
-   - `worker/index.ts` starts the background worker as a separate process.
+   - `app/server.ts` starts the HTTP API + Socket.IO server
+   - `worker/index.ts` starts the BullMQ worker as a separate process
 2. API layer
-   - `app/app.module.ts`, routes, controllers, guards.
+   - `app/app.module.ts` wires middleware, routers, health, error handling
+   - `app/routes/*` map endpoints; `app/controllers/*` parse/validate/respond
 3. Business and data layer
-   - services, schema/types, Prisma model files, Redis cache access.
+   - `app/services/*` hold business logic; Prisma via `config/prisma.client.ts`
+   - `config/redis.client.ts` (cache + pub/sub), `config/queues.ts` (BullMQ producers)
+   - `zod/*` define request schemas shared by `validateBody`/`validateQuery`/`validateParams`
 4. Background jobs layer
-   - `worker/jobs/` for queued, scheduled, or long-running work.
+   - `worker/jobs/` consume the `pos-jobs` queue; results publish to Redis `pos:events`
+   - The API subscriber re-emits worker results to Socket.IO clients
 
-## Runtime flow of the generated backend
+## Runtime flow
 
 1. Startup (`app/server.ts`)
-   - Loads `.env`
-   - Tries MongoDB connection
-   - Continues in in-memory sample auth mode when MongoDB is unavailable and `MONGODB_REQUIRED=false`
-   - Tries Redis connection (continues if unavailable)
-   - Seeds first admin from env (`ADMIN_*`/`SAMPLE_ADMIN_*`) depending on active auth mode
-   - Starts HTTP server and Socket.IO server
+   - Loads `.env` (validated by `config/env.ts` — fails fast in production on default secrets)
+   - Connects PostgreSQL (startup fails if unreachable) and Redis (optional, degrades gracefully)
+   - Seeds first ADMIN staff from `ADMIN_SEED_EMAIL`/`ADMIN_SEED_PASSWORD` if not present
+   - Starts HTTP server (with port auto-fallback) and Socket.IO server (JWT handshake auth)
 2. App setup (`app/app.module.ts`)
-   - Registers JSON parser and CORS logic
-   - Public routes: `/` and `/api/health`
-   - Auth routes: `/api/auth/admin/*`
-   - Protected routes under `/api/*` use `adminAuthGuard`
-   - 404 fallback for unknown routes
-3. Auth request path
-   - Route -> Controller -> DTO validation -> Service -> DB or in-memory sample store
-   - `POST /api/auth/admin/login`: validates body, checks password, returns access + refresh token
-   - `POST /api/auth/admin/refresh`: verifies refresh token, rotates tokens, updates refresh hash
-   - `POST /api/auth/admin/logout`: protected route, clears stored refresh token hash
-4. Protected route path
-   - `adminAuthGuard` validates Bearer access token (`role=admin`, `tokenType=access`)
-   - Request proceeds only when token is valid
-5. Cache and realtime path
-   - `/api/health` uses Redis cache through `cache.service.ts`
-   - Socket.IO events are configured in `app/socket/socket.server.ts`
-6. Worker path (separate process)
-   - `npm run dev:worker` starts `worker/index.ts`
-   - Jobs live in `worker/jobs/` and should not be started from the HTTP server
+   - Helmet, JSON parser, CORS, rate limiting
+   - Public: `/`, `/api/health`, `/api/auth/login`, `/api/auth/refresh`
+   - Authenticated: `/api/products`, `/api/categories`, `/api/customers`, `/api/orders`, `/api/reports`
+   - Central error handler: ZodError → 400, AppError → status+code, unknown → 500
+3. Checkout request path (the core flow)
+   - `POST /api/orders` with optional `Idempotency-Key`
+   - Redis claim via `SET NX EX` (replay stored response / 409 while in-flight / pass-through when Redis off)
+   - `order.service.createOrder` prices lines (integer cents, basis-point tax), then in one Prisma transaction:
+     creates order + snapshot items, guards stock decrement (`stock >= qty` else 422), writes payments + stock movements
+   - Side effects after commit: invalidate product list cache, emit `order:created` to the store room, publish pos event, enqueue low-stock alert
+4. Stock adjustments path
+   - `POST /api/products/:id/adjust-stock` — guarded update + `StockMovement` ledger entry
+5. Reports path
+   - `GET /api/reports/sales/daily|summary` — manager+ only; SQL aggregates, no report tables
+6. Worker path
+   - `report:daily` (repeatable) and `stock:low-alert` jobs; results fan out via `pos:events` → Socket.IO
 
 ## Backend folder map (where to edit)
 
 - `app/routes/`: endpoint mapping
 - `app/controllers/`: request/response handling
 - `app/services/`: business logic and DB operations
-- `app/common/guards/`: auth and access control
-- `app/types/`: DTO parsing and schema types
-- `app/config/`: integrations (Redis client, etc.)
-- `app/socket/`: realtime events and socket config
-- `worker/`: background worker process
-- `worker/jobs/`: individual jobs executed by the worker
+- `app/common/`: errors, asyncHandler, validate middleware, guards (roles)
+- `zod/`: request schemas (per domain)
+- `config/`: env, Prisma client, Redis client, BullMQ queues
+- `socket/`: realtime events and socket auth
+- `worker/`: background worker process and jobs
 - `tests/`: endpoint behavior and regressions
 - `docs/`: endpoint and architecture documentation
+- `prisma/`: schema + seed
 
 ## Simple change flow for contributors
 
 1. Find the route you want to change.
-2. Update controller + service + DTO validation together.
-3. If data shape changes, update schema and docs.
+2. Update zod schema + controller + service together.
+3. If data shape changes, update `prisma/schema.prisma` and docs.
 4. Add or update tests for changed behavior.
-5. Run checks: `npm run lint`, `npm test`, `npm run build`.
+5. Run checks: `npm run lint`, `npx tsc --noEmit`, `npm test`, `npm run build`.
 
 ## Quick rule
 

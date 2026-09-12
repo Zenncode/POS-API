@@ -1,10 +1,15 @@
 declare global {
   namespace Express {
     interface Request {
-      admin?: {
+      user?: {
         id: string;
         email: string;
-        role: 'admin';
+        role: 'ADMIN' | 'MANAGER' | 'CASHIER';
+      };
+      override?: {
+        userId: string;
+        email: string;
+        role: 'ADMIN' | 'MANAGER';
       };
     }
   }
