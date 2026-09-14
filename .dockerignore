@@ -10,3 +10,6 @@ coverage
 .vscode
 .env
 assets/uploads
+# POS-API standard is pnpm — never bake npm's lockfile into images.
+package-lock.json
+docker-compose.override.yml

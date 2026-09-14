@@ -2,17 +2,19 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-RUN apk add --no-cache openssl
+RUN apk add --no-cache openssl && corepack enable
 
-COPY package*.json ./
-RUN npm ci
+# pnpm is the standard for POS-API (packageManager pin in package.json).
+# package-lock.json is ignored (see .dockerignore) — pnpm-lock.yaml is source of truth.
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
 
 COPY prisma ./prisma/
-RUN npx prisma generate
+RUN pnpm exec prisma generate
 
 COPY . .
 
-RUN npm run build
+RUN pnpm run build
 
 EXPOSE 3000
 

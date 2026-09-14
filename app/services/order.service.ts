@@ -7,8 +7,9 @@ import { getSocketServer } from '../../socket/socket.server';
 import { delCacheByPrefix } from './cache.service';
 import { computeOrderTotals } from './pricing.service';
 import { notFound, unprocessable } from '../common/errors';
-import type { CreateOrderDto, ListOrdersDto, OrderItemInput, OrderPaymentInput } from '../../zod/order.schema';
+import type { CreateOrderDto, ListOrdersDto, OrderItemInput, OrderPaymentInput, RefundOrderDto } from '../../zod/order.schema';
 import { paginationSkip } from '../../zod/shared';
+import { writeAuditLog } from './audit.service';
 
 type OrderWithRelations = Prisma.OrderGetPayload<{
   include: { items: true; payments: true; cashier: { select: { id: true; name: true; email: true } }; customer: true };
@@ -310,4 +311,192 @@ export async function voidOrder(
   });
 
   return updated;
+}
+
+export type RefundResult = {
+  order: OrderWithRelations;
+  refundAmountCents: number;
+  refundedLines: { orderItemId: string; quantity: number; amountCents: number }[];
+};
+
+export async function refundOrder(
+  orderId: string,
+  dto: RefundOrderDto,
+  actorId: string,
+  authorizedById?: string | null,
+): Promise<RefundResult> {
+  const prisma = getPrismaClient();
+
+  const result = await prisma.$transaction(async (tx) => {
+    const order = await tx.order.findUnique({
+      where: { id: orderId },
+      include: { items: true, payments: true },
+    });
+
+    if (!order) {
+      throw notFound('Order not found');
+    }
+
+    if (order.status === OrderStatus.VOID) {
+      throw unprocessable('Cannot refund a voided order', 'ORDER_VOIDED');
+    }
+
+    if (order.status === OrderStatus.REFUNDED) {
+      throw unprocessable('Order is already fully refunded', 'ORDER_ALREADY_REFUNDED');
+    }
+
+    if (order.status !== OrderStatus.PAID) {
+      throw unprocessable(`Only PAID orders can be refunded (current status: ${order.status})`, 'ORDER_NOT_REFUNDABLE');
+    }
+
+    // Build a map of order items by ID
+    const itemMap = new Map(order.items.map((item) => [item.id, item]));
+
+    // Validate refund lines and calculate totals
+    const refundedLines: { orderItemId: string; quantity: number; amountCents: number }[] = [];
+    let totalRefundCents = 0;
+
+    for (const line of dto.lines) {
+      const orderItem = itemMap.get(line.orderItemId);
+      if (!orderItem) {
+        throw unprocessable(`Order item not found: ${line.orderItemId}`, 'ORDER_ITEM_NOT_FOUND');
+      }
+
+      // Check if refund quantity exceeds what's available to refund
+      const previouslyRefundedQty = await getPreviouslyRefundedQuantity(tx, order.id, line.orderItemId);
+      const availableToRefund = orderItem.quantity - previouslyRefundedQty;
+
+      if (line.quantity > availableToRefund) {
+        throw unprocessable(
+          `Cannot refund ${line.quantity} units of ${orderItem.nameSnapshot} (only ${availableToRefund} available for refund)`,
+          'REFUND_QUANTITY_EXCEEDED',
+        );
+      }
+
+      // Calculate refund amount for this line (using the stored unitPriceCents which includes tax)
+      // The lineTotalCents already includes tax, so we calculate proportionally
+      const unitTotalCents = orderItem.lineTotalCents / orderItem.quantity;
+      const lineRefundCents = unitTotalCents * line.quantity;
+      totalRefundCents += lineRefundCents;
+
+      refundedLines.push({
+        orderItemId: line.orderItemId,
+        quantity: line.quantity,
+        amountCents: lineRefundCents,
+      });
+
+      // Restore stock
+      await tx.product.update({
+        where: { id: orderItem.productId },
+        data: { stock: { increment: line.quantity } },
+      });
+
+      // Create stock movement for refund
+      await tx.stockMovement.create({
+        data: {
+          productId: orderItem.productId,
+          delta: line.quantity,
+          reason: 'REFUND',
+          orderId: order.id,
+          note: `Refunded ${line.quantity} x ${orderItem.nameSnapshot}`,
+        },
+      });
+    }
+
+    // Create refund payment record (negative amount)
+    await tx.payment.create({
+      data: {
+        orderId: order.id,
+        method: dto.paymentMethod,
+        amountCents: -totalRefundCents,
+        reference: dto.reference ?? `Refund: ${dto.note ?? 'No note'}`,
+      },
+    });
+
+    // Determine new order status
+    // Calculate total refunded so far (including this refund)
+    const totalRefundedSoFar = await tx.payment.aggregate({
+      where: { orderId: order.id, amountCents: { lt: 0 } },
+      _sum: { amountCents: true },
+    });
+
+    const allRefundedCents = Math.abs(totalRefundedSoFar._sum.amountCents ?? 0) + totalRefundCents;
+    const newStatus = allRefundedCents >= order.totalCents ? OrderStatus.REFUNDED : OrderStatus.PAID;
+
+    const updatedOrder = await tx.order.update({
+      where: { id: orderId },
+      data: { status: newStatus },
+      include: {
+        items: { include: { product: { select: { name: true, sku: true, priceCents: true } } } },
+        payments: true,
+        cashier: { select: { id: true, name: true, email: true } },
+        customer: true,
+      },
+    });
+
+    return { order: updatedOrder, refundAmountCents: totalRefundCents, refundedLines };
+  });
+
+  await delCacheByPrefix('products:list');
+
+  const authorizedBy = authorizedById ?? null;
+
+  const io = getSocketServer();
+  const room = result.order.storeId ? `store:${result.order.storeId}` : 'store:default';
+  io?.to(room).emit('order:refunded', {
+    id: result.order.id,
+    orderNumber: result.order.orderNumber,
+    refundAmountCents: result.refundAmountCents,
+    refundedBy: actorId,
+    authorizedBy,
+    lines: result.refundedLines,
+  });
+
+  await publishPosEvent({
+    type: 'order:refunded',
+    data: { id: result.order.id, orderNumber: result.order.orderNumber, refundAmountCents: result.refundAmountCents, refundedBy: actorId, authorizedBy },
+  });
+
+  // Write audit log
+  await writeAuditLog({
+    userId: actorId,
+    action: 'ORDER_REFUND',
+    entity: 'Order',
+    entityId: orderId,
+    metadata: {
+      refundAmountCents: result.refundAmountCents,
+      paymentMethod: dto.paymentMethod,
+      lines: result.refundedLines,
+      authorizedBy,
+      note: dto.note,
+    },
+    result: 'SUCCESS',
+  });
+
+  return result;
+}
+
+async function getPreviouslyRefundedQuantity(tx: Prisma.TransactionClient, orderId: string, orderItemId: string): Promise<number> {
+  // For simplicity, we track refunds through negative payment amounts
+  // In a more sophisticated system, we might have a RefundLine model
+  // Here we approximate by checking stock movements with REFUND reason for this order item
+  const movements = await tx.stockMovement.findMany({
+    where: { orderId, reason: 'REFUND' },
+    select: { delta: true, productId: true },
+  });
+
+  // Get the product ID for this order item
+  const orderItem = await tx.orderItem.findUnique({
+    where: { id: orderItemId },
+    select: { productId: true },
+  });
+
+  if (!orderItem) return 0;
+
+  // Sum up all refund deltas for this product in this order
+  // Note: this is an approximation since multiple order items could have the same product
+  // A more precise implementation would need a RefundLine model
+  return movements
+    .filter((m) => m.productId === orderItem.productId)
+    .reduce((sum, m) => sum + m.delta, 0);
 }

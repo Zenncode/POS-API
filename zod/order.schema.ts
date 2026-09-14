@@ -25,6 +25,23 @@ export const createOrderSchema = z
     'Duplicate product lines are not allowed — merge quantities instead',
   );
 
+export const refundLineSchema = z.object({
+  orderItemId: z.string().uuid(),
+  quantity: z.number().int().min(1),
+});
+
+export const refundOrderSchema = z
+  .object({
+    lines: z.array(refundLineSchema).min(1, 'Refund needs at least one line').max(200),
+    paymentMethod: z.enum(['CASH', 'CARD', 'QR']),
+    reference: z.string().max(255).optional(),
+    note: z.string().max(500).optional(),
+  })
+  .refine(
+    (value) => new Set(value.lines.map((line) => line.orderItemId)).size === value.lines.length,
+    'Duplicate order item lines are not allowed in a single refund',
+  );
+
 export const listOrdersSchema = paginationSchema.extend({
   status: z.enum(['PENDING', 'PAID', 'VOID', 'REFUNDED']).optional(),
   cashierId: z.string().uuid().optional(),
@@ -35,4 +52,6 @@ export const listOrdersSchema = paginationSchema.extend({
 export type OrderPaymentInput = z.infer<typeof paymentInputSchema>;
 export type OrderItemInput = z.infer<typeof orderItemInputSchema>;
 export type CreateOrderDto = z.infer<typeof createOrderSchema>;
+export type RefundLineInput = z.infer<typeof refundLineSchema>;
+export type RefundOrderDto = z.infer<typeof refundOrderSchema>;
 export type ListOrdersDto = z.infer<typeof listOrdersSchema>;

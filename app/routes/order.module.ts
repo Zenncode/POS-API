@@ -2,12 +2,13 @@ import { Router } from 'express';
 import { asyncHandler } from '../common/asyncHandler';
 import { authGuard, requireOverride } from '../common/guards/auth.guard';
 import { validateBody, validateParams, validateQuery } from '../common/validate.middleware';
-import { createOrderSchema, listOrdersSchema } from '../../zod/order.schema';
+import { createOrderSchema, listOrdersSchema, refundOrderSchema } from '../../zod/order.schema';
 import { idParamSchema } from '../../zod/shared';
 import {
   handleCreateOrder,
   handleGetOrder,
   handleListOrders,
+  handleRefundOrder,
   handleVoidOrder,
 } from '../controllers/order.controller';
 
@@ -23,4 +24,11 @@ orderRouter.post(
   requireOverride,
   validateParams(idParamSchema),
   asyncHandler(handleVoidOrder),
+);
+orderRouter.post(
+  '/:id/refund',
+  requireOverride,
+  validateParams(idParamSchema),
+  validateBody(refundOrderSchema),
+  asyncHandler(handleRefundOrder),
 );

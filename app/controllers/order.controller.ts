@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { conflict, unauthorized, unprocessable } from '../common/errors';
 import { ensureOverride } from '../common/guards/auth.guard';
-import { createOrderSchema, listOrdersSchema } from '../../zod/order.schema';
+import { createOrderSchema, listOrdersSchema, refundOrderSchema } from '../../zod/order.schema';
 import { idParamSchema } from '../../zod/shared';
 import { getEnv } from '../../config/env';
 import {
@@ -10,7 +10,7 @@ import {
   releaseIdempotency,
   storeIdempotentResponse,
 } from '../services/idempotency.service';
-import { createOrder, finalizeOrderSideEffects, getOrder, listOrders, voidOrder } from '../services/order.service';
+import { createOrder, finalizeOrderSideEffects, getOrder, listOrders, refundOrder, voidOrder } from '../services/order.service';
 
 export async function handleCreateOrder(req: Request, res: Response): Promise<void> {
   if (!req.user) {
@@ -99,4 +99,16 @@ export async function handleVoidOrder(req: Request, res: Response): Promise<void
   const { id } = idParamSchema.parse(req.params);
   const authorizedBy = req.override?.userId ?? null;
   res.status(200).json(await voidOrder(id, req.user.id, authorizedBy));
+}
+
+export async function handleRefundOrder(req: Request, res: Response): Promise<void> {
+  if (!req.user) {
+    throw unauthorized();
+  }
+
+  const { id } = idParamSchema.parse(req.params);
+  const dto = refundOrderSchema.parse(req.body);
+  const authorizedBy = req.override?.userId ?? null;
+
+  res.status(200).json(await refundOrder(id, dto, req.user.id, authorizedBy));
 }

@@ -13,6 +13,7 @@ export type AuditAction =
   | 'USER_PIN_SET'
   | 'OVERRIDE_REQUEST'
   | 'ORDER_VOID'
+  | 'ORDER_REFUND'
   | 'DISCOUNT_OVERRIDE'
   | 'STOCK_ADJUST'
   | 'REFRESH_TOKEN_REUSE';

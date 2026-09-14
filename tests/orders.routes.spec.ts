@@ -1,3 +1,4 @@
+import { notFound, unprocessable } from '../app/common/errors';
 import request from 'supertest';
 import jwt from 'jsonwebtoken';
 
@@ -13,6 +14,7 @@ jest.mock('../app/services/order.service', () => ({
   listOrders: jest.fn(),
   getOrder: jest.fn(),
   voidOrder: jest.fn(),
+  refundOrder: jest.fn(),
   finalizeOrderSideEffects: jest.fn(async () => undefined),
 }));
 
@@ -32,12 +34,18 @@ jest.mock('../app/services/cache.service', () => ({
   withCache: jest.fn(async (_key: string, _ttl: number, producer: () => Promise<unknown>) => producer()),
 }));
 
+jest.mock('../app/services/audit.service', () => ({
+  writeAuditLog: jest.fn(async () => undefined),
+}));
+
 import { createApp } from '../app/app.module';
 import * as orderService from '../app/services/order.service';
 import * as idempotencyService from '../app/services/idempotency.service';
 
 const createOrderMock = orderService.createOrder as jest.MockedFunction<typeof orderService.createOrder>;
 const listOrdersMock = orderService.listOrders as jest.MockedFunction<typeof orderService.listOrders>;
+const voidOrderMock = orderService.voidOrder as jest.MockedFunction<typeof orderService.voidOrder>;
+const refundOrderMock = orderService.refundOrder as jest.MockedFunction<typeof orderService.refundOrder>;
 const beginIdempotencyMock = idempotencyService.beginIdempotency as jest.Mock;
 const extractIdempotencyKeyMock = idempotencyService.extractIdempotencyKey as jest.Mock;
 
@@ -56,7 +64,9 @@ const orderFixture = {
   totalCents: 2160,
   paidCents: 2500,
   changeCents: 340,
-  items: [],
+  items: [
+    { id: '00000000-0000-4000-8000-000000000010', productId: 'p1', nameSnapshot: 'Product 1', skuSnapshot: 'SKU1', unitPriceCents: 1000, quantity: 2, lineTotalCents: 2160 },
+  ],
   payments: [],
   cashier: { id: 'u1', name: 'Cashier', email: 'user@example.com' },
   customer: null,
@@ -65,6 +75,23 @@ const orderFixture = {
 const validPayload = {
   items: [{ productId: '00000000-0000-4000-8000-000000000001', quantity: 2 }],
   payments: [{ method: 'CASH', amountCents: 2500 }],
+};
+
+const refundPayload = {
+  lines: [{ orderItemId: '00000000-0000-4000-8000-000000000010', quantity: 1 }],
+  paymentMethod: 'CASH',
+  reference: 'ref-123',
+  note: 'Customer request',
+};
+
+const refundResultFixture = {
+  order: {
+    ...orderFixture,
+    status: 'PAID',
+    payments: [{ id: 'pay1', method: 'CASH', amountCents: -1080, reference: 'Refund: Customer request' }],
+  },
+  refundAmountCents: 1080,
+  refundedLines: [{ orderItemId: 'item1', quantity: 1, amountCents: 1080 }],
 };
 
 describe('Order routes', () => {
@@ -152,11 +179,11 @@ describe('Order routes', () => {
       .set('Authorization', `Bearer ${cashierToken('CASHIER')}`);
 
     expect(response.status).toBe(403);
-    expect(orderService.voidOrder).not.toHaveBeenCalled();
+    expect(voidOrderMock).not.toHaveBeenCalled();
   });
 
   it('voids orders for managers', async () => {
-    (orderService.voidOrder as jest.MockedFunction<typeof orderService.voidOrder>).mockResolvedValueOnce({
+    voidOrderMock.mockResolvedValueOnce({
       ...orderFixture,
       status: 'VOID',
     } as never);
@@ -170,7 +197,7 @@ describe('Order routes', () => {
   });
 
   it('allows cashiers to void orders with a manager override token', async () => {
-    (orderService.voidOrder as jest.MockedFunction<typeof orderService.voidOrder>).mockResolvedValueOnce({
+    voidOrderMock.mockResolvedValueOnce({
       ...orderFixture,
       status: 'VOID',
     } as never);
@@ -188,7 +215,7 @@ describe('Order routes', () => {
 
     expect(response.status).toBe(200);
     expect(response.body.status).toBe('VOID');
-    expect(orderService.voidOrder).toHaveBeenCalledWith(
+    expect(voidOrderMock).toHaveBeenCalledWith(
       '00000000-0000-4000-8000-000000000009',
       'u1',
       'mgr1',
@@ -203,7 +230,7 @@ describe('Order routes', () => {
 
     expect(response.status).toBe(403);
     expect(response.body.code).toBe('INVALID_OVERRIDE_TOKEN');
-    expect(orderService.voidOrder).not.toHaveBeenCalled();
+    expect(voidOrderMock).not.toHaveBeenCalled();
   });
 
   it('requires manager approval when a cashier discounts above the threshold', async () => {
@@ -227,5 +254,112 @@ describe('Order routes', () => {
 
     expect(response.status).toBe(201);
     expect(createOrderMock).toHaveBeenCalled();
+  });
+
+  describe('Refunds', () => {
+    it('forbids cashiers from refunding orders', async () => {
+      const response = await request(app)
+        .post('/api/orders/00000000-0000-4000-8000-000000000009/refund')
+        .set('Authorization', `Bearer ${cashierToken('CASHIER')}`)
+        .send(refundPayload);
+
+      expect(response.status).toBe(403);
+      expect(refundOrderMock).not.toHaveBeenCalled();
+    });
+
+    it('refunds orders for managers', async () => {
+      refundOrderMock.mockResolvedValueOnce(refundResultFixture as never);
+
+      const response = await request(app)
+        .post('/api/orders/00000000-0000-4000-8000-000000000009/refund')
+        .set('Authorization', `Bearer ${cashierToken('MANAGER')}`)
+        .send(refundPayload);
+
+      expect(response.status).toBe(200);
+      expect(response.body.refundAmountCents).toBe(1080);
+      expect(response.body.refundedLines).toHaveLength(1);
+      expect(refundOrderMock).toHaveBeenCalledWith(
+        '00000000-0000-4000-8000-000000000009',
+        expect.objectContaining({
+          lines: [{ orderItemId: '00000000-0000-4000-8000-000000000010', quantity: 1 }],
+          paymentMethod: 'CASH',
+          reference: 'ref-123',
+          note: 'Customer request',
+        }),
+        'u1',
+        null,
+      );
+    });
+
+    it('allows cashiers to refund orders with a manager override token', async () => {
+      refundOrderMock.mockResolvedValueOnce(refundResultFixture as never);
+
+      const overrideToken = jwt.sign(
+        { sub: 'mgr1', email: 'manager@example.com', role: 'MANAGER', tokenType: 'override' },
+        process.env.JWT_SECRET as string,
+        { expiresIn: '5m' },
+      );
+
+      const response = await request(app)
+        .post('/api/orders/00000000-0000-4000-8000-000000000009/refund')
+        .set('Authorization', `Bearer ${cashierToken('CASHIER')}`)
+        .set('X-Override-Token', overrideToken)
+        .send(refundPayload);
+
+      expect(response.status).toBe(200);
+      expect(response.body.refundAmountCents).toBe(1080);
+      expect(refundOrderMock).toHaveBeenCalledWith(
+        '00000000-0000-4000-8000-000000000009',
+        expect.any(Object),
+        'u1',
+        'mgr1',
+      );
+    });
+
+    it('rejects refund for non-existent order', async () => {
+      refundOrderMock.mockRejectedValueOnce(notFound('Order not found'));
+
+      const response = await request(app)
+        .post('/api/orders/00000000-0000-4000-8000-000000000009/refund')
+        .set('Authorization', `Bearer ${cashierToken('MANAGER')}`)
+        .send(refundPayload);
+
+      expect(response.status).toBe(404);
+    });
+
+    it('rejects refund for voided order', async () => {
+      refundOrderMock.mockRejectedValueOnce(unprocessable('Cannot refund a voided order', 'ORDER_VOIDED'));
+
+      const response = await request(app)
+        .post('/api/orders/00000000-0000-4000-8000-000000000009/refund')
+        .set('Authorization', `Bearer ${cashierToken('MANAGER')}`)
+        .send(refundPayload);
+
+      expect(response.status).toBe(422);
+      expect(response.body.code).toBe('ORDER_VOIDED');
+    });
+
+    it('rejects refund for already fully refunded order', async () => {
+      refundOrderMock.mockRejectedValueOnce(unprocessable('Order is already fully refunded', 'ORDER_ALREADY_REFUNDED'));
+
+      const response = await request(app)
+        .post('/api/orders/00000000-0000-4000-8000-000000000009/refund')
+        .set('Authorization', `Bearer ${cashierToken('MANAGER')}`)
+        .send(refundPayload);
+
+      expect(response.status).toBe(422);
+      expect(response.body.code).toBe('ORDER_ALREADY_REFUNDED');
+    });
+
+    it('rejects refund with invalid payload', async () => {
+      const response = await request(app)
+        .post('/api/orders/00000000-0000-4000-8000-000000000009/refund')
+        .set('Authorization', `Bearer ${cashierToken('MANAGER')}`)
+        .send({ lines: [], paymentMethod: 'CASH' });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toBe('Validation failed');
+      expect(refundOrderMock).not.toHaveBeenCalled();
+    });
   });
 });

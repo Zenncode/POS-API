@@ -47,6 +47,7 @@ Currently override-gated:
 | Method | Path | Access | Notes |
 | --- | --- | --- | --- |
 | GET | `/api/health` | public | `{ status, database, cache, queue, generatedAt }` |
+| GET | `/api/hello` | public | Query: `name?`. Returns `{ message, timestamp }` |
 
 ## Products
 
@@ -81,6 +82,23 @@ Currently override-gated:
 | DELETE | `/api/customers/:id` | manager+ | Orders keep history (`customerId` nullified) |
 | POST | `/api/customers/:id/loyalty` | manager+ | `{ delta }` (int, non-zero) |
 
+## Shifts & Cash Drawer
+
+| Method | Path | Access | Notes |
+| --- | --- | --- | --- |
+| POST | `/api/shifts/open` | auth | Open shift. Body: `{ openingFloat: [{ denomination, count }], note? }`. Returns the raw shift (`201`) |
+| POST | `/api/shifts/close` | auth | Close caller's open shift. Body: `{ closingFloat: [{ denomination, count }], note? }`. Returns the raw shift (`200`), `404` when none open |
+| GET | `/api/shifts/current` | auth | Get current user's open shift — raw shift or `null` (`200`) |
+| GET | `/api/shifts` | auth | Query: `page, pageSize, userId, status, from, to`. Cashiers see only their own shifts |
+| GET | `/api/shifts/:id` | auth | Shift detail with cash counts |
+| GET | `/api/shifts/reports/z` | manager+ | Z-reports. Query: `page, pageSize, storeId, from, to` |
+| GET | `/api/shifts/reports/z/:id` | manager+ | Z-report detail |
+
+Open/close float format (denominations in cents):
+```json
+{ "openingFloat": [{ "denomination": 10000, "count": 5 }, { "denomination": 5000, "count": 10 }] }
+```
+
 ## Orders (checkout)
 
 | Method | Path | Access | Notes |
@@ -89,6 +107,7 @@ Currently override-gated:
 | GET | `/api/orders` | auth | Query: `page, pageSize, status, cashierId, from, to`. Cashiers are scoped to their own orders |
 | GET | `/api/orders/:id` | auth | Includes items, payments, cashier, customer |
 | POST | `/api/orders/:id/void` | override | Manager+ directly; cashiers need `X-Override-Token`. Restores stock, marks order VOID |
+| POST | `/api/orders/:id/refund` | override | Manager+ directly; cashiers need `X-Override-Token`. Partial line-level refunds, restores stock, creates refund payment |
 
 Checkout request body:
 
@@ -112,6 +131,29 @@ Response `201`:
 ```
 
 Stock is decremented inside the same transaction that creates the order; if any item lacks stock, the whole checkout fails with `422 INSUFFICIENT_STOCK` and nothing is persisted.
+
+Refund request body:
+
+```json
+{
+  "lines": [{ "orderItemId": "<uuid>", "quantity": 1 }],
+  "paymentMethod": "CASH",
+  "reference": "optional external refund ID",
+  "note": "optional reason"
+}
+```
+
+Response `200`:
+
+```json
+{
+  "order": { "id": "...", "orderNumber": "ORD-20260101-AB12CD", "status": "PAID", "totalCents": 2160, "...": "..." },
+  "refundAmountCents": 1080,
+  "refundedLines": [{ "orderItemId": "<uuid>", "quantity": 1, "amountCents": 1080 }]
+}
+```
+
+Refunds are processed in a transaction: stock is restored, `StockMovement` records with `REFUND` reason are created, and a negative `Payment` record is added. The order status becomes `REFUNDED` when the cumulative refunded amount equals or exceeds the order total; otherwise it remains `PAID` (partial refund). Only `PAID` orders can be refunded (not `VOID` or already `REFUNDED`). Refund quantity per line cannot exceed the originally sold quantity minus any previously refunded quantity.
 
 ## Reports (manager+)
 

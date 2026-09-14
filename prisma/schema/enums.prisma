@@ -1,0 +1,36 @@
+enum UserRole {
+  ADMIN
+  MANAGER
+  CASHIER
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  VOID
+  REFUNDED
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  QR
+}
+
+enum StockMovementReason {
+  SALE
+  REFUND
+  PURCHASE
+  ADJUST
+  VOID
+}
+
+enum ShiftStatus {
+  OPEN
+  CLOSED
+}
+
+enum CashCountType {
+  OPENING
+  CLOSING
+}

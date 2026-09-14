@@ -13,6 +13,7 @@ model User {
 
   store  Store?  @relation(fields: [storeId], references: [id], onDelete: SetNull)
   orders Order[]
+  shifts Shift[]
 
   @@index([storeId])
   @@map("users")

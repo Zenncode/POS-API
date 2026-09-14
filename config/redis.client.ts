@@ -98,7 +98,7 @@ export async function getSubscriberClient(): Promise<RedisClient | null> {
 }
 
 export type PosEventPayload = {
-  type: 'stock:low' | 'order:created' | 'order:voided' | 'report:daily' | 'report:daily:completed';
+  type: 'stock:low' | 'order:created' | 'order:voided' | 'order:refunded' | 'report:daily' | 'report:daily:completed';
   data: unknown;
 };
 

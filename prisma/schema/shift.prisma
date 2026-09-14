@@ -1,0 +1,66 @@
+model Shift {
+  id                String      @id @default(uuid())
+  userId            String
+  storeId           String?
+  openedAt          DateTime    @default(now())
+  closedAt          DateTime?
+  openingFloatCents Int
+  closingFloatCents Int?
+  expectedCashCents Int?
+  varianceCents     Int?
+  status            ShiftStatus @default(OPEN)
+  note              String?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  user       User        @relation(fields: [userId], references: [id])
+  store      Store?      @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  cashCounts CashCount[] @relation("ShiftCashCounts")
+  zReport    ZReport?    @relation("ShiftZReport")
+
+  @@index([userId, openedAt])
+  @@index([storeId, openedAt])
+  @@index([status])
+  @@map("shifts")
+}
+
+model CashCount {
+  id           String        @id @default(uuid())
+  shiftId      String
+  denomination Int
+  count        Int
+  type         CashCountType
+  createdAt    DateTime      @default(now())
+
+  shift Shift @relation("ShiftCashCounts", fields: [shiftId], references: [id], onDelete: Cascade)
+
+  @@index([shiftId])
+  @@map("cash_counts")
+}
+
+model ZReport {
+  id                  String   @id @default(uuid())
+  storeId             String?
+  shiftId             String?  @unique
+  date                DateTime @db.Date
+  totalSalesCents     Int      @default(0)
+  totalCashSalesCents Int      @default(0)
+  totalCardSalesCents Int      @default(0)
+  totalRefundsCents   Int      @default(0)
+  netSalesCents       Int      @default(0)
+  openingFloatCents   Int
+  closingFloatCents   Int?
+  expectedCashCents   Int?
+  varianceCents       Int?
+  transactionCount    Int      @default(0)
+  voidCount           Int      @default(0)
+  refundCount         Int      @default(0)
+  generatedAt         DateTime @default(now())
+
+  shift Shift? @relation("ShiftZReport", fields: [shiftId], references: [id], onDelete: SetNull)
+  store Store? @relation(fields: [storeId], references: [id], onDelete: SetNull)
+
+  @@index([storeId, date])
+  @@index([date])
+  @@map("z_reports")
+}

@@ -5,8 +5,10 @@ model Store {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users  User[]
-  orders Order[]
+  users    User[]
+  orders   Order[]
+  shifts   Shift[]
+  zReports ZReport[]
 
   @@map("stores")
 }

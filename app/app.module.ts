@@ -7,9 +7,11 @@ import { ZodError } from 'zod';
 import { authRouter } from './routes/auth.module';
 import { categoryRouter } from './routes/category.module';
 import { customerRouter } from './routes/customer.module';
+import { helloRouter } from './routes/hello.module';
 import { orderRouter } from './routes/order.module';
 import { productRouter } from './routes/product.module';
 import { reportRouter } from './routes/report.module';
+import { shiftRouter } from './routes/shift.module';
 import { userRouter } from './routes/user.module';
 import { getEnv } from '../config/env';
 import { getPrismaClient } from '../config/prisma.client';
@@ -148,10 +150,12 @@ export function createApp(): express.Express {
   });
 
   app.use('/api/auth', authRouter);
+  app.use('/api/hello', helloRouter);
   app.use('/api/products', productRouter);
   app.use('/api/categories', categoryRouter);
   app.use('/api/customers', customerRouter);
   app.use('/api/orders', orderRouter);
+  app.use('/api/shifts', shiftRouter);
   app.use('/api/users', userRouter);
   app.use('/api/reports', reportRouter);
 
