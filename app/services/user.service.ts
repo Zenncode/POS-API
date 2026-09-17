@@ -23,7 +23,7 @@ export type ManagerOverrideUser = {
   role: UserRole;
 };
 
-const safeSelect = Prisma.validator<Prisma.UserSelect>()({
+const safeSelect: Prisma.UserSelect = {
   id: true,
   email: true,
   name: true,
@@ -31,7 +31,7 @@ const safeSelect = Prisma.validator<Prisma.UserSelect>()({
   isActive: true,
   createdAt: true,
   updatedAt: true,
-});
+};
 
 function getSaltRounds(): number {
   return getEnv().BCRYPT_SALT_ROUNDS;

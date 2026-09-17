@@ -108,6 +108,7 @@ Open/close float format (denominations in cents):
 | GET | `/api/orders/:id` | auth | Includes items, payments, cashier, customer |
 | POST | `/api/orders/:id/void` | override | Manager+ directly; cashiers need `X-Override-Token`. Restores stock, marks order VOID |
 | POST | `/api/orders/:id/refund` | override | Manager+ directly; cashiers need `X-Override-Token`. Partial line-level refunds, restores stock, creates refund payment |
+| GET | `/api/orders/:id/receipt` | auth | Query: `format=pdf|escpos` (default: pdf). Returns receipt file download |
 
 Checkout request body:
 
@@ -154,6 +155,17 @@ Response `200`:
 ```
 
 Refunds are processed in a transaction: stock is restored, `StockMovement` records with `REFUND` reason are created, and a negative `Payment` record is added. The order status becomes `REFUNDED` when the cumulative refunded amount equals or exceeds the order total; otherwise it remains `PAID` (partial refund). Only `PAID` orders can be refunded (not `VOID` or already `REFUNDED`). Refund quantity per line cannot exceed the originally sold quantity minus any previously refunded quantity.
+
+Receipt request:
+```
+GET /api/orders/:id/receipt?format=pdf
+```
+
+Response `200`: Binary file download (PDF or ESC/POS text stream)
+- `Content-Type: application/pdf` (for pdf) or `application/octet-stream` (for escpos)
+- `Content-Disposition: attachment; filename="receipt-ORD-20260101-AB12CD.pdf"`
+
+The receipt includes store info, order details, line items with prices, totals, payment breakdown, and refund details (when applicable).
 
 ## Reports (manager+)
 

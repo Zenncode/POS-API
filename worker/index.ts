@@ -1,7 +1,7 @@
 import { Worker } from 'bullmq';
 import { loadEnvFile } from '../config/loadEnv';
 import { getEnv } from '../config/env';
-import { POS_QUEUE_NAME, bullConnection, closeQueue } from '../config/queues';
+import { POS_QUEUE_NAME, bullConnection, closeQueue, setupRepeatableJobs } from '../config/queues';
 import { connectDatabase, disconnectDatabase } from '../config/prisma.client';
 import { connectRedis, disconnectRedis } from '../config/redis.client';
 import { runDailyReportJob } from './jobs/report.job';
@@ -67,6 +67,9 @@ async function startWorker(): Promise<void> {
     });
     return;
   }
+
+  // Set up repeatable jobs (daily report at 1 AM UTC)
+  await setupRepeatableJobs();
 
   worker = startBullWorker();
   log(`Worker listening on queue "${POS_QUEUE_NAME}" (redis: ${env.REDIS_URL})`);

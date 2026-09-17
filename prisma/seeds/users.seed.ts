@@ -51,11 +51,12 @@ export async function seedUsers(prisma: PrismaClient): Promise<void> {
   const users = getUsersSeedData();
 
   for (const u of users) {
-    const passwordHash = await bcrypt.hash(u.password, 12);
-    const pinHash = u.pin ? await bcrypt.hash(u.pin, 12) : null;
+    const rounds = parseInt(envOr('BCRYPT_SALT_ROUNDS', '4'), 10);
+    const passwordHash = await bcrypt.hash(u.password, rounds);
+    const pinHash = u.pin ? await bcrypt.hash(u.pin, rounds) : null;
     await prisma.user.upsert({
       where: { email: u.email },
-      update: { role: u.role, isActive: true, pinHash },
+      update: { role: u.role, isActive: true, passwordHash, pinHash, name: u.name },
       create: {
         email: u.email,
         passwordHash,

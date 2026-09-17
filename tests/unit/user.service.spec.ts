@@ -1,3 +1,12 @@
+jest.mock('@prisma/client', () => ({
+  UserRole: {
+    ADMIN: 'ADMIN',
+    MANAGER: 'MANAGER',
+    CASHIER: 'CASHIER',
+  },
+  Prisma: {},
+}));
+
 jest.mock('../../config/prisma.client', () => ({
   getPrismaClient: () => mockPrisma,
 }));

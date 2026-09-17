@@ -61,7 +61,8 @@ export function createOverrideToken(user: { id: string; email: string; role: Use
 }
 
 function getSaltRounds(): number {
-  return getEnv().BCRYPT_SALT_ROUNDS;
+  const env = getEnv();
+  return env.NODE_ENV === 'development' ? 4 : env.BCRYPT_SALT_ROUNDS;
 }
 
 function setRefreshCookie(res: Response, refreshToken: string): void {

@@ -1,0 +1,52 @@
+# Isolated E2E infrastructure — NEVER touches dev volumes/network.
+# Usage (from POS-API/):
+#   pnpm run e2e:infra:up     # postgres :55433 + redis :56379 (loopback only)
+#   pnpm run e2e:bootstrap     # prisma db push + test-only seed into pos_e2e
+#   pnpm run e2e:infra:down
+# Project name MUST be -p pos-e2e (see package.json scripts) so containers,
+# volumes, and network stay separate from the dev compose stack.
+services:
+  postgres-e2e:
+    image: postgres:16-alpine
+    container_name: pos-e2e-postgres
+    restart: 'no'
+    ports:
+      - '127.0.0.1:55433:5432'
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: pos_e2e
+    volumes:
+      - pos_e2e_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d pos_e2e']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - pos-e2e-network
+
+  redis-e2e:
+    image: redis:7-alpine
+    container_name: pos-e2e-redis
+    restart: 'no'
+    command: redis-server --appendonly yes
+    ports:
+      - '127.0.0.1:56379:6379'
+    volumes:
+      - pos_e2e_redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - pos-e2e-network
+
+volumes:
+  pos_e2e_postgres_data:
+  pos_e2e_redis_data:
+
+networks:
+  pos-e2e-network:
+    driver: bridge

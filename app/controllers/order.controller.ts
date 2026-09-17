@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
-import { conflict, unauthorized, unprocessable } from '../common/errors';
+import { conflict, unauthorized, unprocessable, notFound } from '../common/errors';
 import { ensureOverride } from '../common/guards/auth.guard';
-import { createOrderSchema, listOrdersSchema, refundOrderSchema } from '../../zod/order.schema';
+import { createOrderSchema, listOrdersSchema, refundOrderSchema, receiptQuerySchema, receiptDeliverySchema } from '../../zod/order.schema';
 import { idParamSchema } from '../../zod/shared';
 import { getEnv } from '../../config/env';
 import {
@@ -11,6 +11,9 @@ import {
   storeIdempotentResponse,
 } from '../services/idempotency.service';
 import { createOrder, finalizeOrderSideEffects, getOrder, listOrders, refundOrder, voidOrder } from '../services/order.service';
+import { generateReceipt, getReceiptMimeType, getReceiptFileName } from '../services/receipt.service';
+import { deliverReceipt, type ReceiptChannel } from '../services/receipt-delivery.service';
+import type { ReceiptQueryDto, ReceiptDeliveryDto } from '../../zod/order.schema';
 
 export async function handleCreateOrder(req: Request, res: Response): Promise<void> {
   if (!req.user) {
@@ -111,4 +114,59 @@ export async function handleRefundOrder(req: Request, res: Response): Promise<vo
   const authorizedBy = req.override?.userId ?? null;
 
   res.status(200).json(await refundOrder(id, dto, req.user.id, authorizedBy));
+}
+
+export async function handleGetReceipt(req: Request, res: Response): Promise<void> {
+  if (!req.user) {
+    throw unauthorized();
+  }
+
+  const { id } = idParamSchema.parse(req.params);
+  const query = receiptQuerySchema.parse(req.query) as ReceiptQueryDto;
+
+  // Get order to check it exists and get order number for filename
+  const order = await getOrder(id);
+
+  const receiptBuffer = await generateReceipt(id, query.format);
+  if (!receiptBuffer) {
+    throw notFound('Order not found');
+  }
+
+  res.setHeader('Content-Type', getReceiptMimeType(query.format));
+  res.setHeader('Content-Disposition', `attachment; filename="${getReceiptFileName(order.orderNumber, query.format)}"`);
+  res.status(200).send(receiptBuffer);
+}
+
+export async function handleDeliverReceipt(req: Request, res: Response): Promise<void> {
+  if (!req.user) {
+    throw unauthorized();
+  }
+
+  const { id } = idParamSchema.parse(req.params);
+  const dto = receiptDeliverySchema.parse(req.body) as ReceiptDeliveryDto;
+
+  // Verify order exists
+  const order = await getOrder(id);
+
+  const results = await deliverReceipt(
+    id,
+    dto.channels as ReceiptChannel[],
+    dto.target,
+    dto.consent,
+    dto.format,
+  );
+
+  const allSuccess = results.every((r) => r.success);
+  const anySuccess = results.some((r) => r.success);
+
+  res.status(allSuccess ? 200 : anySuccess ? 207 : 502).json({
+    orderId: order.id,
+    orderNumber: order.orderNumber,
+    results,
+    summary: {
+      total: results.length,
+      successful: results.filter((r) => r.success).length,
+      failed: results.filter((r) => !r.success).length,
+    },
+  });
 }

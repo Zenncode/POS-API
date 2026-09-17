@@ -1,5 +1,15 @@
 import { AppError } from '../../app/common/errors';
 
+jest.mock('@prisma/client', () => ({
+  OrderStatus: {
+    PENDING: 'PENDING',
+    PAID: 'PAID',
+    VOID: 'VOID',
+    REFUNDED: 'REFUNDED',
+  },
+  Prisma: {},
+}));
+
 jest.mock('../../config/prisma.client', () => ({
   getPrismaClient: () => mockPrisma,
 }));

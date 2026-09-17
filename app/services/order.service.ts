@@ -6,12 +6,13 @@ import { publishPosEvent } from '../../config/redis.client';
 import { getSocketServer } from '../../socket/socket.server';
 import { delCacheByPrefix } from './cache.service';
 import { computeOrderTotals } from './pricing.service';
+import { reserveStock, releaseStock, releaseAllReservations } from './stock-reservation.service';
 import { notFound, unprocessable } from '../common/errors';
 import type { CreateOrderDto, ListOrdersDto, OrderItemInput, OrderPaymentInput, RefundOrderDto } from '../../zod/order.schema';
 import { paginationSkip } from '../../zod/shared';
 import { writeAuditLog } from './audit.service';
 
-type OrderWithRelations = Prisma.OrderGetPayload<{
+export type OrderWithRelations = Prisma.OrderGetPayload<{
   include: { items: true; payments: true; cashier: { select: { id: true; name: true; email: true } }; customer: true };
 }>;
 
@@ -124,6 +125,18 @@ export async function createOrder(dto: CreateOrderDto, cashierId: string, storeI
     throw unprocessable((error as Error).message, 'INVALID_ORDER_TOTALS');
   }
 
+  // Create soft stock reservations (FR-21) - these expire automatically via Redis TTL
+  // If the transaction fails, we release the reservations
+  const saleId = `sale-${randomBytes(8).toString('hex')}`;
+  for (const item of dto.items) {
+    const reserveResult = await reserveStock(item.productId, item.quantity, saleId);
+    if (!reserveResult.success) {
+      // Release any already-created reservations for this sale
+      await releaseAllReservations(saleId);
+      throw unprocessable(reserveResult.error ?? 'Failed to reserve stock', 'STOCK_RESERVATION_FAILED');
+    }
+  }
+
   const created = await prisma.$transaction(async (tx) => {
     const order = await tx.order.create({
       data: {
@@ -182,6 +195,9 @@ export async function createOrder(dto: CreateOrderDto, cashierId: string, storeI
 
     return { order: fullOrder, lowStockProductIds };
   });
+
+  // Release soft reservations now that the sale is committed
+  await releaseAllReservations(saleId);
 
   return created;
 }

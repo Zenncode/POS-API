@@ -2,6 +2,7 @@ node_modules
 dist
 coverage
 .env
+.env.e2e
 assets/uploads/*
 !assets/uploads/.gitkeep
 logs/*

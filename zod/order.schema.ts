@@ -49,9 +49,22 @@ export const listOrdersSchema = paginationSchema.extend({
   to: z.string().datetime().optional(),
 });
 
+export const receiptQuerySchema = z.object({
+  format: z.enum(['pdf', 'escpos']).default('pdf'),
+});
+
+export const receiptDeliverySchema = z.object({
+  channels: z.array(z.enum(['EMAIL', 'SMS', 'PRINT'])).min(1, 'At least one delivery channel required').max(3),
+  target: z.string().min(1, 'Target (email or phone) is required'),
+  consent: z.boolean().refine((v) => v === true, 'Consent is required for receipt delivery'),
+  format: z.enum(['pdf', 'escpos']).default('pdf'),
+});
+
 export type OrderPaymentInput = z.infer<typeof paymentInputSchema>;
 export type OrderItemInput = z.infer<typeof orderItemInputSchema>;
 export type CreateOrderDto = z.infer<typeof createOrderSchema>;
 export type RefundLineInput = z.infer<typeof refundLineSchema>;
 export type RefundOrderDto = z.infer<typeof refundOrderSchema>;
 export type ListOrdersDto = z.infer<typeof listOrdersSchema>;
+export type ReceiptQueryDto = z.infer<typeof receiptQuerySchema>;
+export type ReceiptDeliveryDto = z.infer<typeof receiptDeliverySchema>;

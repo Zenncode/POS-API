@@ -98,6 +98,40 @@ export async function enqueueDailyReport(dateIso: string): Promise<void> {
   }
 }
 
+// Set up repeatable jobs (runs daily at 1 AM UTC)
+export async function setupRepeatableJobs(): Promise<void> {
+  const posQueue = getPosQueue();
+  if (!posQueue) {
+    return;
+  }
+
+  try {
+    // Remove existing repeatable job if any
+    const repeatableJobs = await posQueue.getRepeatableJobs();
+    for (const job of repeatableJobs) {
+      if (job.name === 'report:daily') {
+        await posQueue.removeRepeatableByKey(job.key);
+      }
+    }
+
+    // Add new repeatable job - runs daily at 1 AM UTC
+    await posQueue.add(
+      'report:daily',
+      { date: new Date().toISOString().slice(0, 10) },
+      {
+        repeat: {
+          pattern: '0 1 * * *', // cron: at 1:00 AM every day
+        },
+        jobId: 'report:daily:repeatable',
+      },
+    );
+
+    process.stdout.write('[queues] Repeatable daily report job scheduled (1 AM UTC)\n');
+  } catch (error) {
+    process.stderr.write(`Failed to setup repeatable jobs: ${String(error)}\n`);
+  }
+}
+
 export async function closeQueue(): Promise<void> {
   if (!queue) {
     return;

@@ -16,7 +16,9 @@ export type AuditAction =
   | 'ORDER_REFUND'
   | 'DISCOUNT_OVERRIDE'
   | 'STOCK_ADJUST'
-  | 'REFRESH_TOKEN_REUSE';
+  | 'REFRESH_TOKEN_REUSE'
+  | 'RECEIPT_DELIVERY'
+  | 'RECEIPT_STORED_LOCALLY';
 
 export type AuditResult = 'SUCCESS' | 'FAILURE';
 

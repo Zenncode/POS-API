@@ -68,6 +68,23 @@ const envSchema = z.object({
   MINIO_SECRET_KEY: z.string().default('minioadmin'),
   MINIO_BUCKET: z.string().default('pos-assets'),
   MINIO_USE_SSL: booleanish(false),
+
+  // Email (SMTP)
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: positiveInt(587),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  SMTP_FROM: z.string().optional(),
+  SMTP_SECURE: booleanish(false),
+
+  // SMS (Twilio compatible)
+  SMS_PROVIDER: z.enum(['twilio', 'vonage', 'mock']).default('mock'),
+  TWILIO_ACCOUNT_SID: z.string().optional(),
+  TWILIO_AUTH_TOKEN: z.string().optional(),
+  TWILIO_FROM_NUMBER: z.string().optional(),
+  VONAGE_API_KEY: z.string().optional(),
+  VONAGE_API_SECRET: z.string().optional(),
+  VONAGE_FROM_NUMBER: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
