@@ -6,7 +6,7 @@ import { publishPosEvent } from '../../config/redis.client';
 import { getSocketServer } from '../../socket/socket.server';
 import { delCacheByPrefix } from './cache.service';
 import { computeOrderTotals } from './pricing.service';
-import { reserveStock, releaseStock, releaseAllReservations } from './stock-reservation.service';
+import { reserveStock, releaseAllReservations } from './stock-reservation.service';
 import { notFound, unprocessable } from '../common/errors';
 import type { CreateOrderDto, ListOrdersDto, OrderItemInput, OrderPaymentInput, RefundOrderDto } from '../../zod/order.schema';
 import { paginationSkip } from '../../zod/shared';
