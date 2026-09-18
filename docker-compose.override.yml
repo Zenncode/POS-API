@@ -1,0 +1,18 @@
+services:
+  api:
+    command: sh -c "pnpm exec prisma generate && pnpm exec prisma db push && pnpm run dev:server"
+    environment:
+      - NODE_ENV=development
+    ports:
+      - '3000:3000'
+    volumes:
+      - ./:/app
+      - /app/node_modules
+      - /app/dist
+
+  worker:
+    command: sh -c "pnpm exec prisma generate && pnpm run dev:worker"
+    volumes:
+      - ./:/app
+      - /app/node_modules
+      - /app/dist

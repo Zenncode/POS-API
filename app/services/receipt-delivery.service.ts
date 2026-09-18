@@ -1,5 +1,5 @@
 import { getPrismaClient } from '../../config/prisma.client';
-import { generateReceipt, getReceiptData, type ReceiptFormat } from './receipt.service';
+import { generateReceipt, type ReceiptFormat } from './receipt.service';
 import { sendReceiptEmail } from './email.service';
 import { sendReceiptSms } from './sms.service';
 import { writeAuditLog } from './audit.service';

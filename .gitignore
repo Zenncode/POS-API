@@ -1,7 +1,6 @@
 node_modules
 dist
 coverage
-.env
 .env.e2e
 assets/uploads/*
 !assets/uploads/.gitkeep
@@ -11,3 +10,4 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+config.bat
