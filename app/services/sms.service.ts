@@ -1,4 +1,5 @@
 import { getEnv } from '../../config/env';
+import { createHmac } from 'crypto';
 
 export interface SmsOptions {
   to: string;
@@ -88,7 +89,7 @@ function generateVonageJwt(apiKey: string, apiSecret: string): string {
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
   const now = Math.floor(Date.now() / 1000);
   const payload = Buffer.from(JSON.stringify({ iat: now, jti: `${apiKey}-${now}`, exp: now + 3600 })).toString('base64url');
-  const signature = require('crypto').createHmac('sha256', apiSecret).update(`${header}.${payload}`).digest('base64url');
+  const signature = createHmac('sha256', apiSecret).update(`${header}.${payload}`).digest('base64url');
   return `${header}.${payload}.${signature}`;
 }
 
